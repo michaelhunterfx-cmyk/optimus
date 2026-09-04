@@ -4,39 +4,61 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="32dp"
-    android:gravity="center">
+    android:gravity="center"
+    android:background="@color/optimus_dark">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Optimus Login"
-        android:textSize="28sp"
+        android:text="OPTIMUS"
+        android:textColor="@color/optimus_light"
+        android:textSize="32sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Sign in to continue"
+        android:textColor="@color/optimus_light"
+        android:textSize="14sp"
         android:layout_marginBottom="24dp" />
 
     <EditText
         android:id="@+id/hostInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Host (domain:port)" />
+        android:hint="Host (domain:port)"
+        android:textColor="@color/optimus_light"
+        android:textColorHint="#999999"
+        android:backgroundTint="@color/optimus_blue" />
 
     <EditText
         android:id="@+id/userInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Username" />
+        android:hint="Username"
+        android:textColor="@color/optimus_light"
+        android:textColorHint="#999999"
+        android:backgroundTint="@color/optimus_blue" />
 
     <EditText
         android:id="@+id/passInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="Password"
-        android:inputType="textPassword" />
+        android:inputType="textPassword"
+        android:textColor="@color/optimus_light"
+        android:textColorHint="#999999"
+        android:backgroundTint="@color/optimus_blue" />
 
     <Button
         android:id="@+id/saveButton"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="24dp"
-        android:text="Save and Continue" />
+        android:text="Save and Continue"
+        android:textColor="@color/optimus_light"
+        android:backgroundTint="@color/optimus_red" />
 
 </LinearLayout>
