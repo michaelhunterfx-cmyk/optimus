@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var listView: ExpandableListView
     private lateinit var miniPlayerView: PlayerView
+    private lateinit var refreshButton: Button
     private lateinit var host: String
     private lateinit var user: String
     private lateinit var pass: String
@@ -43,6 +44,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         listView = findViewById(R.id.channelList)
         miniPlayerView = findViewById(R.id.miniPlayerView)
+        refreshButton = findViewById(R.id.refreshButton)
         val settingsButton = findViewById<Button>(R.id.settingsButton)
 
         settingsButton.setOnClickListener {
@@ -50,6 +52,10 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(this, SettingsActivity::class.java)
             intent.putStringArrayListExtra("all_groups", allGroups)
             startActivity(intent)
+        }
+
+        refreshButton.setOnClickListener {
+            loadChannelsThenEpg()
         }
 
         val prefs = getSharedPreferences("optimus_prefs", MODE_PRIVATE)
@@ -68,6 +74,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadChannelsThenEpg() {
+        refreshButton.isEnabled = false
+        refreshButton.text = "Refreshing..."
+        statusText.text = "Loading channels..."
+
         val m3uUrl = "http://$host/get.php?username=$user&password=$pass&type=m3u_plus&output=ts"
 
         Thread {
@@ -88,6 +98,8 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 runOnUiThread {
                     statusText.text = "Failed to load: ${e.message}"
+                    refreshButton.isEnabled = true
+                    refreshButton.text = "Refresh"
                 }
             }
         }.start()
@@ -116,10 +128,14 @@ class MainActivity : AppCompatActivity() {
                 nowPlayingMap = nowMap
                 refreshDisplay()
                 statusText.text = "${allChannels.size} channels loaded"
+                refreshButton.isEnabled = true
+                refreshButton.text = "Refresh"
             }
         } catch (e: Exception) {
             runOnUiThread {
                 statusText.text = "${allChannels.size} channels loaded (guide unavailable)"
+                refreshButton.isEnabled = true
+                refreshButton.text = "Refresh"
             }
         }
     }
