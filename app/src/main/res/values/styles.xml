@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Optimus" parent="Theme.AppCompat">
+        <item name="colorPrimary">@color/optimus_blue</item>
+        <item name="colorPrimaryDark">@color/optimus_dark</item>
+        <item name="colorAccent">@color/optimus_red</item>
+        <item name="android:windowBackground">@color/optimus_dark</item>
+        <item name="android:textColorPrimary">@color/optimus_light</item>
+    </style>
+</resources>
