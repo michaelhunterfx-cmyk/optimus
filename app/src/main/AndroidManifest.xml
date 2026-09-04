@@ -1,245 +1,37 @@
-package com.optimus.iptv
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-import android.content.Intent
-import android.os.Bundle
-import android.util.Xml
-import android.widget.Button
-import android.widget.ExpandableListView
-import android.widget.SimpleExpandableListAdapter
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
-import org.xmlpull.v1.XmlPullParser
-import java.net.HttpURLConnection
-import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+    <uses-permission android:name="android.permission.INTERNET" />
 
-data class Channel(val name: String, val url: String, val group: String, val tvgId: String)
-data class Programme(val channelId: String, val title: String, val start: Date, val stop: Date)
+    <application
+        android:allowBackup="true"
+        android:label="Optimus"
+        android:icon="@drawable/ic_optimus_logo"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.Optimus">
 
-class MainActivity : AppCompatActivity() {
+        <activity
+            android:name=".LoginActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
 
-    private var allChannels: List<Channel> = emptyList()
-    private var groupedChannels: List<Pair<String, List<Channel>>> = emptyList()
-    private var nowPlayingMap: Map<String, String> = emptyMap()
-    private var miniPlayer: ExoPlayer? = null
-    private var miniPlayingUrl: String? = null
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
 
-    private lateinit var statusText: TextView
-    private lateinit var listView: ExpandableListView
-    private lateinit var miniPlayerView: PlayerView
-    private lateinit var host: String
-    private lateinit var user: String
-    private lateinit var pass: String
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false" />
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
 
-        statusText = findViewById(R.id.statusText)
-        listView = findViewById(R.id.channelList)
-        miniPlayerView = findViewById(R.id.miniPlayerView)
-        val settingsButton = findViewById<Button>(R.id.settingsButton)
+    </application>
 
-        settingsButton.setOnClickListener {
-            val allGroups = ArrayList(allChannels.map { it.group }.distinct().sorted())
-            val intent = Intent(this, SettingsActivity::class.java)
-            intent.putStringArrayListExtra("all_groups", allGroups)
-            startActivity(intent)
-        }
-
-        val prefs = getSharedPreferences("optimus_prefs", MODE_PRIVATE)
-        host = prefs.getString("host", "") ?: ""
-        user = prefs.getString("username", "") ?: ""
-        pass = prefs.getString("password", "") ?: ""
-
-        loadChannelsThenEpg()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (allChannels.isNotEmpty()) {
-            refreshDisplay()
-        }
-    }
-
-    private fun loadChannelsThenEpg() {
-        val m3uUrl = "http://$host/get.php?username=$user&password=$pass&type=m3u_plus&output=ts"
-
-        Thread {
-            try {
-                val connection = URL(m3uUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                val text = connection.inputStream.bufferedReader().readText()
-                val channels = parseM3U(text)
-
-                runOnUiThread {
-                    allChannels = channels
-                    refreshDisplay()
-                    statusText.text = "${channels.size} channels loaded. Loading guide..."
-                }
-
-                loadEpg()
-            } catch (e: Exception) {
-                runOnUiThread {
-                    statusText.text = "Failed to load: ${e.message}"
-                }
-            }
-        }.start()
-    }
-
-    private fun loadEpg() {
-        val epgUrl = "http://$host/xmltv.php?username=$user&password=$pass"
-
-        try {
-            val connection = URL(epgUrl).openConnection() as HttpURLConnection
-            connection.connectTimeout = 15000
-            connection.readTimeout = 30000
-            val inputStream = connection.inputStream
-
-            val programmes = parseXmltv(inputStream)
-            val now = Date()
-
-            val nowMap = mutableMapOf<String, String>()
-            for (p in programmes) {
-                if (now.after(p.start) && now.before(p.stop)) {
-                    nowMap[p.channelId] = p.title
-                }
-            }
-
-            runOnUiThread {
-                nowPlayingMap = nowMap
-                refreshDisplay()
-                statusText.text = "${allChannels.size} channels loaded"
-            }
-        } catch (e: Exception) {
-            runOnUiThread {
-                statusText.text = "${allChannels.size} channels loaded (guide unavailable)"
-            }
-        }
-    }
-
-    private fun parseXmltv(inputStream: java.io.InputStream): List<Programme> {
-        val programmes = mutableListOf<Programme>()
-        val format = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
-
-        val parser = Xml.newPullParser()
-        parser.setInput(inputStream, null)
-
-        var eventType = parser.eventType
-        var channelId = ""
-        var startDate: Date? = null
-        var stopDate: Date? = null
-        var title = ""
-        var insideTitle = false
-
-        while (eventType != XmlPullParser.END_DOCUMENT) {
-            when (eventType) {
-                XmlPullParser.START_TAG -> {
-                    when (parser.name) {
-                        "programme" -> {
-                            channelId = parser.getAttributeValue(null, "channel") ?: ""
-                            val startStr = parser.getAttributeValue(null, "start")
-                            val stopStr = parser.getAttributeValue(null, "stop")
-                            startDate = try { format.parse(startStr ?: "") } catch (e: Exception) { null }
-                            stopDate = try { format.parse(stopStr ?: "") } catch (e: Exception) { null }
-                            title = ""
-                        }
-                        "title" -> insideTitle = true
-                    }
-                }
-                XmlPullParser.TEXT -> {
-                    if (insideTitle) {
-                        title = parser.text ?: ""
-                    }
-                }
-                XmlPullParser.END_TAG -> {
-                    if (parser.name == "title") {
-                        insideTitle = false
-                    }
-                    if (parser.name == "programme" && startDate != null && stopDate != null) {
-                        programmes.add(Programme(channelId, title, startDate, stopDate))
-                    }
-                }
-            }
-            eventType = parser.next()
-        }
-        return programmes
-    }
-
-    private fun refreshDisplay() {
-        val prefs = getSharedPreferences("optimus_prefs", MODE_PRIVATE)
-        val hiddenGroups = prefs.getStringSet("hidden_groups", emptySet()) ?: emptySet()
-
-        val visibleChannels = allChannels.filter { !hiddenGroups.contains(it.group) }
-        groupedChannels = visibleChannels.groupBy { it.group }.toList()
-
-        showChannels()
-    }
-
-    private fun parseM3U(text: String): List<Channel> {
-        val channels = mutableListOf<Channel>()
-        val lines = text.lines()
-        var currentName = ""
-        var currentGroup = "Uncategorized"
-        var currentTvgId = ""
-
-        for (line in lines) {
-            if (line.startsWith("#EXTINF")) {
-                val groupMatch = Regex("group-title=\"(.*?)\"").find(line)
-                currentGroup = groupMatch?.groupValues?.get(1)?.ifBlank { "Uncategorized" } ?: "Uncategorized"
-
-                val tvgIdMatch = Regex("tvg-id=\"(.*?)\"").find(line)
-                currentTvgId = tvgIdMatch?.groupValues?.get(1) ?: ""
-
-                val nameParts = line.split(",")
-                currentName = if (nameParts.size > 1) nameParts.last().trim() else "Unknown"
-            } else if (line.startsWith("http")) {
-                channels.add(Channel(currentName, line.trim(), currentGroup, currentTvgId))
-            }
-        }
-        return channels
-    }
-
-    private fun showChannels() {
-        val groupData = groupedChannels.map { (groupName, channelsInGroup) ->
-            mapOf("group" to "$groupName (${channelsInGroup.size})")
-        }
-
-        val childData = groupedChannels.map { (_, channelsInGroup) ->
-            channelsInGroup.map { channel ->
-                val nowPlaying = nowPlayingMap[channel.tvgId]
-                val label = if (nowPlaying != null) "${channel.name} — Now: $nowPlaying" else channel.name
-                mapOf("child" to label)
-            }
-        }
-
-        val adapter = SimpleExpandableListAdapter(
-            this,
-            groupData,
-            android.R.layout.simple_expandable_list_item_1,
-            arrayOf("group"),
-            intArrayOf(android.R.id.text1),
-            childData,
-            android.R.layout.simple_expandable_list_item_1,
-            arrayOf("child"),
-            intArrayOf(android.R.id.text1)
-        )
-
-        listView.setAdapter(adapter)
-
-        listView.setOnChildClickListener { _, _, groupPosition, childPosition, _ ->
-            val channel = groupedChannels[groupPosition].second[childPosition]
-
-            if (miniPlayingUrl == channel.url) {
-                val intent = Intent(this, PlayerActivity::class.java)
-                intent.putExtra("stream_url", channel.url)
-                startActivity(intent)
-            } else {
-                startMiniPreview(channel.url)
-            }
+</manifest>
