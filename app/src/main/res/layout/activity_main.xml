@@ -23,6 +23,15 @@
             android:textStyle="bold" />
 
         <Button
+            android:id="@+id/refreshButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="Refresh"
+            android:textColor="@color/optimus_light"
+            android:backgroundTint="@color/optimus_gray" />
+
+        <Button
             android:id="@+id/settingsButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
