@@ -2,6 +2,7 @@ package com.optimus.iptv
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Xml
 import android.widget.Button
 import android.widget.ExpandableListView
 import android.widget.SimpleExpandableListAdapter
@@ -10,21 +11,30 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import org.xmlpull.v1.XmlPullParser
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-data class Channel(val name: String, val url: String, val group: String)
+data class Channel(val name: String, val url: String, val group: String, val tvgId: String)
+data class Programme(val channelId: String, val title: String, val start: Date, val stop: Date)
 
 class MainActivity : AppCompatActivity() {
 
     private var allChannels: List<Channel> = emptyList()
     private var groupedChannels: List<Pair<String, List<Channel>>> = emptyList()
+    private var nowPlayingMap: Map<String, String> = emptyMap()
     private var miniPlayer: ExoPlayer? = null
     private var miniPlayingUrl: String? = null
 
     private lateinit var statusText: TextView
     private lateinit var listView: ExpandableListView
     private lateinit var miniPlayerView: PlayerView
+    private lateinit var host: String
+    private lateinit var user: String
+    private lateinit var pass: String
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,10 +53,21 @@ class MainActivity : AppCompatActivity() {
         }
 
         val prefs = getSharedPreferences("optimus_prefs", MODE_PRIVATE)
-        val host = prefs.getString("host", "") ?: ""
-        val user = prefs.getString("username", "") ?: ""
-        val pass = prefs.getString("password", "") ?: ""
+        host = prefs.getString("host", "") ?: ""
+        user = prefs.getString("username", "") ?: ""
+        pass = prefs.getString("password", "") ?: ""
 
+        loadChannelsThenEpg()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (allChannels.isNotEmpty()) {
+            refreshDisplay()
+        }
+    }
+
+    private fun loadChannelsThenEpg() {
         val m3uUrl = "http://$host/get.php?username=$user&password=$pass&type=m3u_plus&output=ts"
 
         Thread {
@@ -60,7 +81,10 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     allChannels = channels
                     refreshDisplay()
+                    statusText.text = "${channels.size} channels loaded. Loading guide..."
                 }
+
+                loadEpg()
             } catch (e: Exception) {
                 runOnUiThread {
                     statusText.text = "Failed to load: ${e.message}"
@@ -69,11 +93,83 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    override fun onResume() {
-        super.onResume()
-        if (allChannels.isNotEmpty()) {
-            refreshDisplay()
+    private fun loadEpg() {
+        val epgUrl = "http://$host/xmltv.php?username=$user&password=$pass"
+
+        try {
+            val connection = URL(epgUrl).openConnection() as HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout = 30000
+            val inputStream = connection.inputStream
+
+            val programmes = parseXmltv(inputStream)
+            val now = Date()
+
+            val nowMap = mutableMapOf<String, String>()
+            for (p in programmes) {
+                if (now.after(p.start) && now.before(p.stop)) {
+                    nowMap[p.channelId] = p.title
+                }
+            }
+
+            runOnUiThread {
+                nowPlayingMap = nowMap
+                refreshDisplay()
+                statusText.text = "${allChannels.size} channels loaded"
+            }
+        } catch (e: Exception) {
+            runOnUiThread {
+                statusText.text = "${allChannels.size} channels loaded (guide unavailable)"
+            }
         }
+    }
+
+    private fun parseXmltv(inputStream: java.io.InputStream): List<Programme> {
+        val programmes = mutableListOf<Programme>()
+        val format = SimpleDateFormat("yyyyMMddHHmmss Z", Locale.US)
+
+        val parser = Xml.newPullParser()
+        parser.setInput(inputStream, null)
+
+        var eventType = parser.eventType
+        var channelId = ""
+        var startDate: Date? = null
+        var stopDate: Date? = null
+        var title = ""
+        var insideTitle = false
+
+        while (eventType != XmlPullParser.END_DOCUMENT) {
+            when (eventType) {
+                XmlPullParser.START_TAG -> {
+                    when (parser.name) {
+                        "programme" -> {
+                            channelId = parser.getAttributeValue(null, "channel") ?: ""
+                            val startStr = parser.getAttributeValue(null, "start")
+                            val stopStr = parser.getAttributeValue(null, "stop")
+                            startDate = try { format.parse(startStr ?: "") } catch (e: Exception) { null }
+                            stopDate = try { format.parse(stopStr ?: "") } catch (e: Exception) { null }
+                            title = ""
+                        }
+                        "title" -> insideTitle = true
+                    }
+                }
+                XmlPullParser.TEXT -> {
+                    if (insideTitle) {
+                        title = parser.text ?: ""
+                    }
+                }
+                XmlPullParser.END_TAG -> {
+                    if (parser.name == "title") {
+                        insideTitle = false
+                    }
+                    if (parser.name == "programme" && startDate != null && stopDate != null) {
+                        programmes.add(Programme(channelId, title, startDate, stopDate))
+                    }
+                }
+            }
+            eventType = parser.next()
+        }
+        return programmes
     }
 
     private fun refreshDisplay() {
@@ -83,7 +179,6 @@ class MainActivity : AppCompatActivity() {
         val visibleChannels = allChannels.filter { !hiddenGroups.contains(it.group) }
         groupedChannels = visibleChannels.groupBy { it.group }.toList()
 
-        statusText.text = "${visibleChannels.size} channels loaded"
         showChannels()
     }
 
@@ -92,16 +187,20 @@ class MainActivity : AppCompatActivity() {
         val lines = text.lines()
         var currentName = ""
         var currentGroup = "Uncategorized"
+        var currentTvgId = ""
 
         for (line in lines) {
             if (line.startsWith("#EXTINF")) {
                 val groupMatch = Regex("group-title=\"(.*?)\"").find(line)
                 currentGroup = groupMatch?.groupValues?.get(1)?.ifBlank { "Uncategorized" } ?: "Uncategorized"
 
+                val tvgIdMatch = Regex("tvg-id=\"(.*?)\"").find(line)
+                currentTvgId = tvgIdMatch?.groupValues?.get(1) ?: ""
+
                 val nameParts = line.split(",")
                 currentName = if (nameParts.size > 1) nameParts.last().trim() else "Unknown"
             } else if (line.startsWith("http")) {
-                channels.add(Channel(currentName, line.trim(), currentGroup))
+                channels.add(Channel(currentName, line.trim(), currentGroup, currentTvgId))
             }
         }
         return channels
@@ -114,7 +213,9 @@ class MainActivity : AppCompatActivity() {
 
         val childData = groupedChannels.map { (_, channelsInGroup) ->
             channelsInGroup.map { channel ->
-                mapOf("child" to channel.name)
+                val nowPlaying = nowPlayingMap[channel.tvgId]
+                val label = if (nowPlaying != null) "${channel.name} — Now: $nowPlaying" else channel.name
+                mapOf("child" to label)
             }
         }
 
